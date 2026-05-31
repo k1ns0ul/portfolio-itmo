@@ -1,0 +1,51 @@
+// Внутренний gRPC между api и aggregator. Не идёт наружу, поэтому держим
+// минимальным: запрос свежих агрегатов и принудительный пересчёт.
+
+syntax = "proto3";
+
+package agg;
+
+option go_package = "github.com/andrey/wallet-scoring/internal/grpcint;agg";
+
+service AggregatorService {
+  rpc GetWalletStats(GetWalletStatsRequest) returns (WalletStatsResponse);
+  rpc GetTopWallets(GetTopWalletsRequest)   returns (TopWalletsResponse);
+  rpc RefreshWallet(RefreshWalletRequest)   returns (Empty);
+}
+
+message Empty {}
+
+message GetWalletStatsRequest {
+  string address = 1;
+}
+
+message WalletStatsResponse {
+  string  wallet                = 1;
+  uint64  tx_count              = 2;
+  int64   first_seen_unix       = 3;
+  int64   last_seen_unix        = 4;
+  uint32  unique_counterparties = 5;
+  double  avg_tx_amount         = 6;
+  double  median_tx_amount      = 7;
+  double  herfindahl_index      = 8;
+  float   smart_contract_ratio  = 9;
+  double  velocity_per_hour     = 10;
+  double  dormancy_days         = 11;
+  float   score                 = 12;
+  string  category              = 13;
+  int64   updated_at_unix       = 14;
+  bool    found                 = 15;
+}
+
+message GetTopWalletsRequest {
+  uint32 limit  = 1;
+  uint32 offset = 2;
+}
+
+message TopWalletsResponse {
+  repeated WalletStatsResponse items = 1;
+}
+
+message RefreshWalletRequest {
+  string address = 1;
+}

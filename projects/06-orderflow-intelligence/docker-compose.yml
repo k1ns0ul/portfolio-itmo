@@ -1,0 +1,137 @@
+version: "3.9"
+
+x-go-build: &go-build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: of_kafka
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: of_clickhouse
+    environment:
+      CLICKHOUSE_DB: orderflow
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  redis:
+    image: redis:7-alpine
+    container_name: of_redis
+    ports:
+      - "6379:6379"
+
+  parser:
+    build:
+      <<: *go-build
+      args:
+        TARGET: parser
+    container_name: of_parser
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_SWAPS: swap-events
+      GRPC_ENDPOINT: ${GRPC_ENDPOINT:-}
+      GRPC_TOKEN: ${GRPC_TOKEN:-}
+      GRPC_COMMITMENT: ${GRPC_COMMITMENT:-confirmed}
+    depends_on:
+      - kafka
+    restart: unless-stopped
+
+  feature-engine:
+    build:
+      <<: *go-build
+      args:
+        TARGET: feature-engine
+    container_name: of_engine
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_SWAPS: swap-events
+      KAFKA_GROUP_ENGINE: feature-engine
+      CLICKHOUSE_DSN: clickhouse://default@clickhouse:9000/orderflow
+      CLICKHOUSE_MIGRATE: "true"
+      REDIS_ADDR: redis:6379
+      ENGINE_INTERVALS: "1m,5m,15m"
+    depends_on:
+      - kafka
+      - clickhouse
+      - redis
+    restart: unless-stopped
+
+  api:
+    build:
+      <<: *go-build
+      args:
+        TARGET: api
+    container_name: of_api
+    environment:
+      API_PORT: "8080"
+      CLICKHOUSE_DSN: clickhouse://default@clickhouse:9000/orderflow
+      CLICKHOUSE_MIGRATE: "true"
+      REDIS_ADDR: redis:6379
+    ports:
+      - "8080:8080"
+    depends_on:
+      - clickhouse
+      - redis
+    restart: unless-stopped
+
+  mockgen:
+    build:
+      <<: *go-build
+      args:
+        TARGET: mockgen
+    container_name: of_mockgen
+    profiles: ["tools"]
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_SWAPS: swap-events
+      MOCK_TPS: "20"
+      MOCK_DURATION: "0"
+    depends_on:
+      - kafka
+
+  ml-predictor:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: of_ml
+    profiles: ["ml"]
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DB: orderflow
+      ML_MODEL_DIR: /app/artifacts
+      INTERVAL_SEC: "60"
+      DAEMON_INTERVAL: "60"
+    volumes:
+      - ml_artifacts:/app/artifacts
+    depends_on:
+      - clickhouse
+    command: ["predict", "--mode=daemon"]
+
+volumes:
+  kafka_data:
+  clickhouse_data:
+  ml_artifacts:

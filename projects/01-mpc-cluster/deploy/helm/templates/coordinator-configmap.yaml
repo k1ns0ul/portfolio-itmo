@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mpc-coordinator-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mpc-coordinator
+data:
+  HTTP_ADDR: ":{{ .Values.coordinator.httpPort }}"
+  GRPC_ADDR: ":{{ .Values.coordinator.grpcPort }}"
+  COORDINATOR_GRPC_ENDPOINT: "mpc-coordinator:{{ .Values.coordinator.grpcPort }}"
+  REDIS_ADDR: "{{ .Values.redis.addr }}"
+  K8S_ENABLED: "true"
+  K8S_NAMESPACE: "{{ .Values.namespace }}"
+  NODE_IMAGE: "{{ .Values.node.image }}"
+  LOG_LEVEL: "{{ .Values.logLevel }}"

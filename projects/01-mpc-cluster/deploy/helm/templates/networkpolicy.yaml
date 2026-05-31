@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mpc-node-isolation
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: mpc-node
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: mpc-node
+        - podSelector:
+            matchLabels:
+              app: mpc-coordinator
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mpc-node
+        - podSelector:
+            matchLabels:
+              app: mpc-coordinator
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

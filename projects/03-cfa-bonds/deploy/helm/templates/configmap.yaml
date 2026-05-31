@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cfa-config
+  namespace: {{ .Values.namespace }}
+data:
+  REDIS_ADDR: "{{ .Values.redis.addr }}"
+  KAFKA_BROKERS: "{{ .Values.kafka.brokers }}"
+  LOG_LEVEL: "{{ .Values.logLevel }}"
+  API_ADDR: ":{{ .Values.api.port }}"
+  METRICS_ADDR: ":{{ .Values.metrics.port }}"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cfa-secrets
+  namespace: {{ .Values.namespace }}
+type: Opaque
+stringData:
+  DB_DSN: "{{ .Values.postgresql.dsn }}"
+  REDIS_PASSWORD: "{{ .Values.redis.password }}"
+  JWT_SECRET: "{{ .Values.jwtSecret }}"

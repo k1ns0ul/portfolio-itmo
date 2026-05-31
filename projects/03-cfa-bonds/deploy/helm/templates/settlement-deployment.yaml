@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.settlement.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.settlement.name }}
+spec:
+  replicas: {{ .Values.settlement.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.settlement.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.settlement.name }}
+    spec:
+      containers:
+        - name: settlement
+          image: "{{ .Values.image.registry }}/cfa-bonds-settlement-worker:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: cfa-config
+            - secretRef:
+                name: cfa-secrets
+          resources:
+{{ toYaml .Values.settlement.resources | indent 12 }}

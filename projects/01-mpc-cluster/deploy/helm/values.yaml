@@ -1,0 +1,33 @@
+namespace: mpc
+
+coordinator:
+  image: mpc-cluster/coordinator:latest
+  replicas: 1
+  httpPort: 8080
+  grpcPort: 9090
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+node:
+  image: mpc-cluster/node:latest
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+postgresql:
+  dsn: "postgres://mpc:mpc@mpc-postgresql:5432/mpc?sslmode=disable"
+
+redis:
+  addr: "mpc-redis-master:6379"
+  password: ""
+
+logLevel: info

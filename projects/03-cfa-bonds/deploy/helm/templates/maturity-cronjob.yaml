@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.maturity.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: "{{ .Values.maturity.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: maturity
+              image: "{{ .Values.image.registry }}/cfa-bonds-maturity-worker:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args: ["--once"]
+              envFrom:
+                - configMapRef:
+                    name: cfa-config
+                - secretRef:
+                    name: cfa-secrets

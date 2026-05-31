@@ -1,0 +1,6 @@
+services:
+  matching-engine:
+    build: .
+    ports:
+      - "9999:9999"
+    command: ["--port", "9999"]

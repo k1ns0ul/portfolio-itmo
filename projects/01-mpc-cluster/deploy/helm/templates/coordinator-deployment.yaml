@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mpc-coordinator
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mpc-coordinator
+spec:
+  replicas: {{ .Values.coordinator.replicas }}
+  selector:
+    matchLabels:
+      app: mpc-coordinator
+  template:
+    metadata:
+      labels:
+        app: mpc-coordinator
+    spec:
+      serviceAccountName: mpc-coordinator
+      containers:
+        - name: coordinator
+          image: {{ .Values.coordinator.image }}
+          ports:
+            - containerPort: {{ .Values.coordinator.httpPort }}
+              name: http
+            - containerPort: {{ .Values.coordinator.grpcPort }}
+              name: grpc
+          envFrom:
+            - configMapRef:
+                name: mpc-coordinator-config
+          env:
+            - name: POSTGRES_DSN
+              value: "{{ .Values.postgresql.dsn }}"
+            - name: REDIS_PASSWORD
+              value: "{{ .Values.redis.password }}"
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: {{ .Values.coordinator.httpPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: {{ .Values.coordinator.httpPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+{{ toYaml .Values.coordinator.resources | indent 12 }}

@@ -1,0 +1,70 @@
+namespace: cfa
+
+image:
+  registry: ghcr.io/andrey
+  tag: latest
+  pullPolicy: IfNotPresent
+
+api:
+  name: cfa-api
+  port: 8080
+  replicas: 2
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  ingress:
+    enabled: true
+    host: cfa.example.com
+
+settlement:
+  name: cfa-settlement
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+coupon:
+  name: cfa-coupon
+  schedule: "0 6 * * *"
+
+maturity:
+  name: cfa-maturity
+  schedule: "0 7 * * *"
+
+metrics:
+  name: cfa-metrics
+  port: 9090
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+postgresql:
+  dsn: "postgres://cfa:cfa@cfa-postgresql:5432/cfa?sslmode=disable"
+
+redis:
+  addr: "cfa-redis-master:6379"
+  password: ""
+
+kafka:
+  brokers: "cfa-kafka:9092"
+
+jwtSecret: "change-me-in-production"
+logLevel: info

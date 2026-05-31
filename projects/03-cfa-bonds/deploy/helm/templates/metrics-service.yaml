@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.metrics.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.metrics.name }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.metrics.name }}
+  ports:
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics

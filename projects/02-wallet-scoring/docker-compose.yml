@@ -1,0 +1,187 @@
+version: "3.9"
+
+x-go-build: &go-build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: ws_kafka
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: ws_clickhouse
+    environment:
+      CLICKHOUSE_DB: wallets
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  redis:
+    image: redis:7-alpine
+    container_name: ws_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  ingester:
+    build:
+      <<: *go-build
+      args:
+        TARGET: ingester
+    container_name: ws_ingester
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_TX: raw-transactions
+      GRPC_ENDPOINT: ${GRPC_ENDPOINT:-}
+      GRPC_TOKEN: ${GRPC_TOKEN:-}
+      GRPC_COMMITMENT: ${GRPC_COMMITMENT:-confirmed}
+    depends_on:
+      - kafka
+    restart: unless-stopped
+
+  writer:
+    build:
+      <<: *go-build
+      args:
+        TARGET: writer
+    container_name: ws_writer
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_TX: raw-transactions
+      KAFKA_GROUP_WRITER: writer
+      CLICKHOUSE_DSN: clickhouse://default@clickhouse:9000/wallets
+      CLICKHOUSE_MIGRATE: "true"
+      WRITER_BATCH_SIZE: "1000"
+      WRITER_BATCH_INTERVAL: "5s"
+    depends_on:
+      - kafka
+      - clickhouse
+    restart: unless-stopped
+
+  aggregator:
+    build:
+      <<: *go-build
+      args:
+        TARGET: aggregator
+    container_name: ws_aggregator
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_SCORES: score-updates
+      CLICKHOUSE_DSN: clickhouse://default@clickhouse:9000/wallets
+      AGG_INTERVAL: 30s
+      AGG_LOOKBACK: 24h
+      AGG_GRPC_PORT: "9090"
+    depends_on:
+      - clickhouse
+      - kafka
+    restart: unless-stopped
+
+  api:
+    build:
+      <<: *go-build
+      args:
+        TARGET: api
+    container_name: ws_api
+    environment:
+      API_PORT: "8080"
+      CLICKHOUSE_DSN: clickhouse://default@clickhouse:9000/wallets
+      REDIS_ADDR: redis:6379
+      AGG_GRPC_ADDR: aggregator:9090
+      API_RATE_LIMIT: "100"
+      API_KEY_REQUIRED: "false"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - clickhouse
+      - redis
+      - aggregator
+    restart: unless-stopped
+
+  notifier:
+    build:
+      <<: *go-build
+      args:
+        TARGET: notifier
+    container_name: ws_notifier
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_SCORES: score-updates
+      KAFKA_GROUP_NOTIFIER: notifier
+      REDIS_ADDR: redis:6379
+      NOTIFIER_ALERT_CHANNEL: alerts
+      NOTIFIER_SCORE_THRESHOLD: "30"
+    depends_on:
+      - kafka
+      - redis
+    restart: unless-stopped
+
+  mockgen:
+    build:
+      <<: *go-build
+      args:
+        TARGET: mockgen
+    container_name: ws_mockgen
+    profiles: ["tools"]
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_TX: raw-transactions
+      MOCK_TPS: "200"
+      MOCK_WALLETS: "5000"
+      MOCK_SCAM_RATIO: "0.05"
+      MOCK_SUSPICIOUS_RATIO: "0.15"
+      MOCK_DURATION_SEC: "0"
+    depends_on:
+      - kafka
+
+  ml-scorer:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: ws_ml
+    profiles: ["ml"]
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DB: wallets
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_SCORES: score-updates
+      KAFKA_TOPIC_REQUESTS: scoring-requests
+      KAFKA_ML_GROUP: ml-scorer
+      ML_MODEL_DIR: /app/artifacts
+      ML_BATCH_SIZE: "10000"
+      ML_DAEMON_INTERVAL: "300"
+    volumes:
+      - ml_artifacts:/app/artifacts
+    depends_on:
+      - clickhouse
+      - kafka
+      - redis
+    command: ["score", "--mode=daemon"]
+
+volumes:
+  kafka_data:
+  clickhouse_data:
+  redis_data:
+  ml_artifacts:

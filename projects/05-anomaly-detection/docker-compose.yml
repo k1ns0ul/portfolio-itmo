@@ -1,0 +1,127 @@
+version: "3.9"
+
+x-go-build: &go-build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: ad_kafka
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: ad_clickhouse
+    environment:
+      CLICKHOUSE_DB: anomalies
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  redis:
+    image: redis:7-alpine
+    container_name: ad_redis
+    ports:
+      - "6379:6379"
+
+  feature-extractor:
+    build:
+      <<: *go-build
+      args:
+        TARGET: feature-extractor
+    container_name: ad_extractor
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_TX: transactions
+      KAFKA_TOPIC_FEATURES: tx-features
+      KAFKA_GROUP_EXTRACTOR: feature-extractor
+      REDIS_ADDR: redis:6379
+    depends_on:
+      - kafka
+      - redis
+    restart: unless-stopped
+
+  api:
+    build:
+      <<: *go-build
+      args:
+        TARGET: api
+    container_name: ad_api
+    environment:
+      API_PORT: "8080"
+      CLICKHOUSE_DSN: clickhouse://default@clickhouse:9000/anomalies
+      CLICKHOUSE_MIGRATE: "true"
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8080:8080"
+    depends_on:
+      - clickhouse
+      - kafka
+    restart: unless-stopped
+
+  tx-simulator:
+    build:
+      <<: *go-build
+      args:
+        TARGET: tx-simulator
+    container_name: ad_simulator
+    profiles: ["tools"]
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_TX: transactions
+      SIM_TPS: "50"
+      SIM_CLIENTS: "1000"
+      SIM_COUNTERPARTIES: "200"
+      SIM_SUSPICIOUS: "0.10"
+      SIM_FRAUD: "0.05"
+      SIM_DURATION: "0"
+    depends_on:
+      - kafka
+
+  ml-worker:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: ad_ml
+    profiles: ["ml"]
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_FEATURES: tx-features
+      KAFKA_TOPIC_ALERTS: anomaly-alerts
+      KAFKA_GROUP_ML: ml-worker
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DB: anomalies
+      ML_MODEL_DIR: /app/artifacts
+      ML_BATCH_SIZE: "100"
+      ML_BATCH_TIMEOUT: "2.0"
+    volumes:
+      - ml_artifacts:/app/artifacts
+    depends_on:
+      - kafka
+      - clickhouse
+    command: ["worker"]
+
+volumes:
+  kafka_data:
+  clickhouse_data:
+  ml_artifacts:

@@ -1,0 +1,2 @@
+add_executable(matching_benchmark main.cpp)
+target_link_libraries(matching_benchmark PRIVATE matching_engine)

@@ -1,0 +1,147 @@
+version: "3.9"
+
+x-go-build: &go-build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: tv_kafka
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tv_postgres
+    environment:
+      POSTGRES_DB: tvygoda
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: tv_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      <<: *go-build
+      args:
+        TARGET: api
+    container_name: tv_api
+    environment:
+      PG_DSN: postgres://app:app@postgres:5432/tvygoda?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
+      API_PORT: "8080"
+      JWT_SECRET: ${JWT_SECRET:-changeme}
+      RECOMMENDER_URL: http://ml-recommender:8090
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - kafka
+      - redis
+
+  promo-worker:
+    build:
+      <<: *go-build
+      args:
+        TARGET: promo-worker
+    container_name: tv_promo_worker
+    environment:
+      PG_DSN: postgres://app:app@postgres:5432/tvygoda?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_PROMO: promo-worker
+    depends_on:
+      - postgres
+      - kafka
+
+  referral-worker:
+    build:
+      <<: *go-build
+      args:
+        TARGET: referral-worker
+    container_name: tv_referral_worker
+    environment:
+      PG_DSN: postgres://app:app@postgres:5432/tvygoda?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
+      KAFKA_GROUP_REF: referral-worker
+    depends_on:
+      - postgres
+      - kafka
+      - redis
+
+  cfa-worker:
+    build:
+      <<: *go-build
+      args:
+        TARGET: cfa-worker
+    container_name: tv_cfa_worker
+    environment:
+      PG_DSN: postgres://app:app@postgres:5432/tvygoda?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_CFA: cfa-worker
+      CFA_RECONCILE_INTERVAL: 1h
+    depends_on:
+      - postgres
+      - kafka
+
+  ml-recommender:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: tv_ml_rec
+    environment:
+      PG_DSN: postgresql://app:app@postgres:5432/tvygoda
+      ML_HOST: 0.0.0.0
+      ML_PORT: "8090"
+      ML_MODEL_DIR: /app/artifacts
+    ports:
+      - "8090:8090"
+    volumes:
+      - ml_artifacts:/app/artifacts
+    depends_on:
+      - postgres
+    command: ["serve"]
+
+  ml-antifraud:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: tv_ml_af
+    profiles: ["ml"]
+    environment:
+      PG_DSN: postgresql://app:app@postgres:5432/tvygoda
+      ML_MODEL_DIR: /app/artifacts
+    volumes:
+      - ml_artifacts:/app/artifacts
+    depends_on:
+      - postgres
+    command: ["audit"]
+
+volumes:
+  kafka_data:
+  postgres_data:
+  redis_data:
+  ml_artifacts:

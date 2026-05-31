@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.metrics.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.metrics.name }}
+spec:
+  replicas: {{ .Values.metrics.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.metrics.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.metrics.name }}
+    spec:
+      containers:
+        - name: metrics
+          image: "{{ .Values.image.registry }}/cfa-bonds-metrics-exporter:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.metrics.port }}
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: cfa-config
+            - secretRef:
+                name: cfa-secrets
+          resources:
+{{ toYaml .Values.metrics.resources | indent 12 }}

@@ -1,0 +1,22 @@
+services:
+  backend-1:
+    image: hashicorp/http-echo
+    command: ["-text=backend-1", "-listen=:3001"]
+  backend-2:
+    image: hashicorp/http-echo
+    command: ["-text=backend-2", "-listen=:3002"]
+  backend-3:
+    image: hashicorp/http-echo
+    command: ["-text=backend-3", "-listen=:3003"]
+  load-balancer:
+    build: .
+    ports:
+      - "8080:8080"
+      - "9100:9100"
+    volumes:
+      - ./config:/etc/lb
+    command: ["--config", "/etc/lb/example.conf"]
+    depends_on:
+      - backend-1
+      - backend-2
+      - backend-3

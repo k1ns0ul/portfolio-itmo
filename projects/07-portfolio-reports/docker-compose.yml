@@ -1,0 +1,86 @@
+version: "3.9"
+
+x-go-build: &go-build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: pr_clickhouse
+    environment:
+      CLICKHOUSE_DB: wallets
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  redis:
+    image: redis:7-alpine
+    container_name: pr_redis
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      <<: *go-build
+      args:
+        TARGET: api
+    container_name: pr_api
+    environment:
+      API_PORT: "8080"
+      CLICKHOUSE_DSN: clickhouse://default@clickhouse:9000/wallets
+      CLICKHOUSE_MIGRATE: "true"
+      REDIS_ADDR: redis:6379
+      LLM_SERVICE_URL: http://llm-service:8090
+      LLM_TIMEOUT: 60s
+      LLM_RETRIES: "2"
+      REPORT_CACHE_TTL: 1h
+    ports:
+      - "8080:8080"
+    depends_on:
+      - clickhouse
+      - redis
+      - llm-service
+    restart: unless-stopped
+
+  mockdata:
+    build:
+      <<: *go-build
+      args:
+        TARGET: mockdata
+    container_name: pr_mockdata
+    profiles: ["tools"]
+    environment:
+      CLICKHOUSE_DSN: clickhouse://default@clickhouse:9000/wallets
+      CLICKHOUSE_MIGRATE: "true"
+      MOCK_WALLETS: "200"
+      MOCK_TOKEN_POOL: "100"
+    depends_on:
+      - clickhouse
+
+  llm-service:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: pr_llm
+    environment:
+      LLM_BACKEND: ${LLM_BACKEND:-mock}
+      LLM_BASE_MODEL: ${LLM_BASE_MODEL:-meta-llama/Meta-Llama-3-8B-Instruct}
+      LLM_MAX_TOKENS: "800"
+      LLM_TEMPERATURE: "0.4"
+      LLM_HOST: 0.0.0.0
+      LLM_PORT: "8090"
+      LLM_MODEL_DIR: /app/artifacts
+    ports:
+      - "8090:8090"
+    volumes:
+      - llm_artifacts:/app/artifacts
+    command: ["serve"]
+
+volumes:
+  clickhouse_data:
+  llm_artifacts:

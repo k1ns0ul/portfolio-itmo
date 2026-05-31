@@ -1,0 +1,131 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "title": "CFA Bonds Platform",
+  "uid": "cfa-bonds",
+  "tags": ["cfa", "bonds", "fintech"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "Prometheus"
+        }
+      },
+      {
+        "name": "interval",
+        "type": "interval",
+        "query": "1m,5m,10m,30m,1h",
+        "current": {
+          "text": "5m",
+          "value": "5m"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total settled trade volume",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "cfa_trades_volume_rub", "legendFormat": "volume RUB", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Trades per minute",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "rate(cfa_trades_total[$interval]) * 60", "legendFormat": "trades/min", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Settlement latency",
+      "type": "histogram",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(cfa_settlement_duration_seconds_bucket[$interval])) by (le))", "legendFormat": "p95", "refId": "A" },
+        { "expr": "histogram_quantile(0.50, sum(rate(cfa_settlement_duration_seconds_bucket[$interval])) by (le))", "legendFormat": "p50", "refId": "B" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Active issues",
+      "type": "stat",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "cfa_issues_total{status=\"active\"}", "legendFormat": "active", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Investors",
+      "type": "stat",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+      "targets": [
+        { "expr": "cfa_investors_total", "legendFormat": "investors", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Coupons paid (amount RUB)",
+      "type": "stat",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "cfa_coupons_paid_amount_rub", "legendFormat": "paid", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Events by type (24h)",
+      "type": "piechart",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "targets": [
+        { "expr": "cfa_events_total", "legendFormat": "{{type}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Settlement outcomes",
+      "type": "table",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "targets": [
+        { "expr": "cfa_settlement_outcomes_total", "legendFormat": "{{outcome}}", "refId": "A", "format": "table", "instant": true }
+      ]
+    }
+  ]
+}
